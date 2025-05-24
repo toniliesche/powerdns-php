@@ -65,11 +65,11 @@ class ZoneTest extends TestCase
         $this->assertNull($zone->getAccount());
     }
 
-    public function testSetNameservers(): void
+    public function testSetNameserversCanoncial(): void
     {
         $zone = new Zone();
-        $zone->setNameservers(['foo', 'bar']);
-        $this->assertSame(['foo', 'bar'], $zone->getNameservers());
+        $zone->setNameservers(['ns1', 'ns2']);
+        $this->assertSame(['ns1.', 'ns2.'], $zone->getNameservers());
     }
 
     public function testSetKind(): void
@@ -116,7 +116,7 @@ class ZoneTest extends TestCase
     {
         $zone = new Zone();
         $zone->setNsec3param(null);
-        $this->assertNull($zone->getNsec3param());
+        $this->assertEmpty($zone->getNsec3param());
     }
 
     public function testSetNsec3paramInvalidAlgorithm(): void

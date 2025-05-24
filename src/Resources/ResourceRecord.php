@@ -271,6 +271,15 @@ class ResourceRecord
      */
     public function setName(string $name): self
     {
+        if ($this->getZone() !== null) {
+            $name = str_replace('@', $this->getZone()->getCanonicalName(), $name);
+
+            // If the name of the record doesn't end in the zone name, append the zone name to it.
+            if (substr($name, -strlen($this->getZone()->getCanonicalName())) !== $this->getZone()->getCanonicalName()) {
+                $name = sprintf('%s.%s', $name, $this->getZone()->getCanonicalName());
+            }
+        }
+
         $this->name = $name;
 
         return $this;
@@ -372,10 +381,7 @@ class ResourceRecord
         $type = strtoupper($type);
 
         if ($this->existingRecord && $type !== $this->getType()) {
-            throw new InvalidRecordType(
-                'Changing the type of existing DNS resource records can yield unexpected results and is not supported.',
-                ['name' => $this->getName(), 'type' => $this->getType(), 'new_type' => $type]
-            );
+            throw new InvalidRecordType('Changing the type of existing DNS resource records can yield unexpected results and is not supported.');
         }
 
         if ((new ReflectionClass(RecordType::class))->getConstant($type) !== false) {
@@ -384,15 +390,26 @@ class ResourceRecord
             return $this;
         }
 
+        $unknownTypeRegex = '/^'.preg_quote(RecordType::unknownTypePrefix, '/').'(\d+)$/';
+        if (preg_match($unknownTypeRegex, $type, $matches)) {
+            if (is_numeric($matches[1])
+                && intval($matches[1]) >= RecordType::privateTypeMin
+                && intval($matches[1]) <= RecordType::privateTypeMax) {
+                $this->type = $type;
+
+                return $this;
+            }
+        }
+
         throw new InvalidRecordType(sprintf('The record type [%s] is not a valid DNS Record type.', $type));
     }
 
     /**
      * Get the zone object for this ResourceRecord.
      *
-     * @return Zone The zone for this ResourceRecord.
+     * @return Zone|null The zone for this ResourceRecord.
      */
-    public function getZone(): Zone
+    public function getZone(): ?Zone
     {
         return $this->zone;
     }

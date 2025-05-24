@@ -3,10 +3,11 @@
 namespace Exonet\Powerdns;
 
 use Exonet\Powerdns\Exceptions\InvalidNsec3Param;
-use Exonet\Powerdns\Resources\Record;
 use Exonet\Powerdns\Resources\ResourceRecord;
 use Exonet\Powerdns\Resources\ResourceSet;
+use Exonet\Powerdns\Transformers\ApiRectifyTransformer;
 use Exonet\Powerdns\Transformers\DnssecTransformer;
+use Exonet\Powerdns\Transformers\KindTransformer;
 use Exonet\Powerdns\Transformers\Nsec3paramTransformer;
 use Exonet\Powerdns\Transformers\RRSetTransformer;
 use Exonet\Powerdns\Transformers\SoaEditApiTransformer;
@@ -20,25 +21,36 @@ class Zone extends AbstractZone
      * resource records will be created in a single call to the PowerDNS server. If $name is a string, a single resource
      * record is created.
      *
-     * @param mixed[]|string $name    The resource record name.
-     * @param string         $type    The type of the resource record.
-     * @param mixed[]|string $content The content of the resource record. When passing a multidimensional array,
-     *                                multiple records are created for this resource record.
-     * @param int            $ttl     The TTL.
+     * @param mixed[]|ResourceRecord|ResourceRecord[]|string $name     The resource record name.
+     * @param string                                         $type     The type of the resource record.
+     * @param mixed[]|string                                 $content  The content of the resource record. When passing a multidimensional array,
+     *                                                                 multiple records are created for this resource record.
+     * @param int                                            $ttl      The TTL.
+     * @param array|mixed[]                                  $comments The comment to assign to the record.
      *
      * @throws Exceptions\InvalidRecordType If the given type is invalid.
      *
      * @return bool True when created.
      */
-    public function create($name, string $type = '', $content = '', int $ttl = 3600): bool
+    public function create($name, string $type = '', $content = '', int $ttl = 3600, array $comments = []): bool
     {
         if (is_array($name)) {
             $resourceRecords = [];
             foreach ($name as $item) {
-                $resourceRecords[] = $this->make($item['name'], $item['type'], $item['content'], $item['ttl'] ?? $ttl);
+                if ($item instanceof ResourceRecord) {
+                    $item->setZone($this)->setName($item->getName());
+                    $resourceRecords[] = $item;
+                } else {
+                    $resourceRecords[] = $this->make($item['name'], $item['type'], $item['content'], $item['ttl'] ?? $ttl, $item['comments'] ?? []);
+                }
             }
         } else {
-            $resourceRecords = [$this->make($name, $type, $content, $ttl)];
+            if ($name instanceof ResourceRecord) {
+                $name->setZone($this)->setName($name->getName());
+                $resourceRecords = [$name];
+            } else {
+                $resourceRecords = [$this->make($name, $type, $content, $ttl, $comments)];
+            }
         }
 
         return $this->patch($resourceRecords);
@@ -116,6 +128,7 @@ class Zone extends AbstractZone
      */
     public function find(string $resourceRecordName, ?string $recordType = null): ResourceSet
     {
+        $resourceRecordName = $resourceRecordName === '@' ? $this->zone : $resourceRecordName;
         $records = $this->get($recordType);
 
         $foundResources = new ResourceSet($this);
@@ -123,6 +136,7 @@ class Zone extends AbstractZone
         foreach ($records as $record) {
             if (
                 $record->getName() === $resourceRecordName
+                || $record->getName() === $resourceRecordName.'.'
                 || $record->getName() === sprintf('%s.%s', $resourceRecordName, $this->zone)
             ) {
                 $foundResources->addResource($record);
@@ -135,18 +149,19 @@ class Zone extends AbstractZone
     /**
      * Make (but not insert/POST) a new resource record.
      *
-     * @param string $name    The resource record name.
-     * @param string $type    The type of the resource record.
-     * @param string $content The content of the resource record.
-     * @param int    $ttl     The TTL.
+     * @param string $name     The resource record name.
+     * @param string $type     The type of the resource record.
+     * @param string $content  The content of the resource record.
+     * @param int    $ttl      The TTL.
+     * @param array  $comments The Comments.
      *
      * @throws Exceptions\InvalidRecordType If the given type is invalid.
      *
      * @return ResourceRecord The constructed ResourceRecord.
      */
-    public function make(string $name, string $type, $content, int $ttl): ResourceRecord
+    public function make(string $name, string $type, $content, int $ttl, array $comments): ResourceRecord
     {
-        return Helper::createResourceRecord($this->zone, compact('name', 'type', 'content', 'ttl'));
+        return Helper::createResourceRecord($this->zone, compact('name', 'type', 'content', 'ttl', 'comments'));
     }
 
     /**
@@ -252,6 +267,16 @@ class Zone extends AbstractZone
     }
 
     /**
+     * Manage the meta data for this zone.
+     *
+     * @return Meta The meta data.
+     */
+    public function meta(): Meta
+    {
+        return new Meta($this->connector, $this->zone);
+    }
+
+    /**
      * Set a new value for the SOA_EDIT setting for this zone.
      *
      * @param string $value New value for the soa_edit meta setting.
@@ -273,5 +298,54 @@ class Zone extends AbstractZone
     public function setSoaEditApi(string $value): bool
     {
         return $this->put(new SoaEditApiTransformer(['soa_edit_api' => $value]));
+    }
+
+    /**
+     * Enable api_rectify for this zone.
+     *
+     * @return bool True when enabled.
+     */
+    public function enableApiRectify(): bool
+    {
+        return $this->setApiRectify(true);
+    }
+
+    /**
+     * Disable  api_rectify for this zone.
+     *
+     * @return bool True when disabled.
+     */
+    public function disableApiRectify(): bool
+    {
+        return $this->setApiRectify(false);
+    }
+
+    /**
+     * Enable or disable api_rectify for this zone.
+     *
+     * @param bool $state True to enable, false to disable.
+     *
+     * @return bool True when the request succeeded.
+     */
+    public function setApiRectify(bool $state): bool
+    {
+        return $this->put(new ApiRectifyTransformer(['api_rectify' => $state]));
+    }
+
+    /**
+     * /**
+     * Set the kind of zone: Native, Master or Slave.
+     *
+     * @param string        $kind    Native, Master or Slave
+     * @param array<string> $masters In case of Slave kind: Master IPs.
+     *
+     * @return bool True when the request succeeded.
+     */
+    public function setKind(string $kind, array $masters = []): bool
+    {
+        $this->resource()->setKind($kind);
+        $this->resource()->setMasters($masters);
+
+        return $this->put(new KindTransformer(['kind' => $kind, 'masters' => $masters]));
     }
 }

@@ -15,7 +15,7 @@ class Powerdns implements PowerdnsInterface
     /**
      * The version of this package. This is being used for the user-agent header.
      */
-    public const CLIENT_VERSION = 'v4.2.1';
+    public const CLIENT_VERSION = 'v4.7.1';
 
     /**
      * @var Powerdns The client instance.
@@ -152,12 +152,7 @@ class Powerdns implements PowerdnsInterface
      */
     public function createZone(string $canonicalDomain, array $nameservers, bool $useDnssec = false): Zone
     {
-        $fixDot = substr($canonicalDomain, -1) !== '.';
-
-        if ($fixDot) {
-            $canonicalDomain .= '.';
-        }
-
+        $canonicalDomain = rtrim($canonicalDomain, '.').'.';
         $newZone = new ZoneResource();
         $newZone->setName($canonicalDomain);
         $newZone->setNameservers($nameservers);
@@ -212,19 +207,19 @@ class Powerdns implements PowerdnsInterface
     /**
      * Retrieve all zones.
      *
-     * @param bool $omitDnssecAndEditedSerialFields When set to true dnssec and edited_serial are omitted
+     * @param bool $includeDnssecAndEditedSerialFields If 'true' then dnssec and edited_serial are included.
      *
      * @return Zone[] Array containing the zones
      *
      * @see https://doc.powerdns.com/authoritative/http-api/zone.html#get--servers-server_id-zones
      */
-    public function listZones(bool $omitDnssecAndEditedSerialFields = false): array
+    public function listZones(bool $includeDnssecAndEditedSerialFields = false): array
     {
         return array_map(
             function (array $args) {
                 return new Zone($this->connector, $args['id']);
             },
-            $this->connector->get('zones?dnssec='.($omitDnssecAndEditedSerialFields ? 'true' : 'false'))
+            $this->connector->get('zones?dnssec='.($includeDnssecAndEditedSerialFields ? 'true' : 'false'))
         );
     }
 
@@ -238,6 +233,16 @@ class Powerdns implements PowerdnsInterface
     public function cryptokeys(string $canonicalDomain): Cryptokey
     {
         return new Cryptokey($this->connector, $canonicalDomain);
+    }
+
+    /**
+     * Get a TSIGKey instance to work with.
+     *
+     * @return TSIGKey The TSIGKey instance
+     */
+    public function tsigkeys(): TSIGKey
+    {
+        return new TSIGKey($this->connector);
     }
 
     /**
@@ -296,7 +301,9 @@ class Powerdns implements PowerdnsInterface
             )
         );
 
-        $searchResults = array_map(static function ($item) { return new SearchResult($item); }, $response);
+        $searchResults = array_map(static function ($item) {
+            return new SearchResult($item);
+        }, $response);
 
         return new SearchResultSet($searchResults);
     }

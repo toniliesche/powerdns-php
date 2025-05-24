@@ -11,17 +11,17 @@ jobs:
   check-code-style:
     name: Check code style
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.head_ref }}
+        uses: actions/checkout@v4
 
       - name: Run php-cs-fixer
         uses: docker://oskarstark/php-cs-fixer-ga
 
       - name: Apply php-cs-fixer changes
-        uses: stefanzweifel/git-auto-commit-action@v4
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Apply php-cs-fixer changes

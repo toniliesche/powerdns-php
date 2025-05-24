@@ -10,8 +10,8 @@ jobs:
 
     strategy:
       matrix:
-        powerdns-versions: ["42", "43", "44", "45", "46", "47"]
-        php-versions: ["7.3", "7.4", "8.0", "8.1", "8.2"]
+        powerdns-versions: ["42", "43", "44", "45", "46", "47", "48", "49"]
+        php-versions: ["7.3", "7.4", "8.0", "8.1", "8.2", "8.3"]
 
     services:
       powerdns:
@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
